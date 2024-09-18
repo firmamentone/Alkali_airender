@@ -1,0 +1,11 @@
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/install/local.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/edit_cache.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/package_source.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/install.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/list_install_components.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/rebuild_cache.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/package.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/smartcam.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/install/strip.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/ivas_airender.dir
+/home/tikao/ASEANTech_Alkali/AIRender/build/CMakeFiles/ivas_xpp.dir

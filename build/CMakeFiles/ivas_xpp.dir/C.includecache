@@ -1,0 +1,16 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/tikao/ASEANTech_Alkali/AIRender/src/ivas_xpp_pipeline.c
+ivas/ivas_kernel.h
+-
+stdio.h
+-
+unistd.h
+-
+
