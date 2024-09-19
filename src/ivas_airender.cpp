@@ -35,7 +35,7 @@
 // TI added for JB ======================
 #include <mqueue.h>
 #include <stdbool.h>
-#define AIRender_VERSION "0002\n"
+#define AIRender_VERSION "0003\n"
 
 
 
@@ -156,11 +156,11 @@ clock_t warn_time_last, warn_time_cur;
 
 
 // Function to filter x0 based on time stability
-int filter(int x0, int *prev_y0, int *stable_count, int stable_threshold) {
+int filter(int x0, int *prev_x0,int *prev_y0, int *stable_count, int stable_threshold) {
     int y0;
 
     // Check if x0 has remained the same
-    if (x0 == *prev_y0) {
+    if (x0 == *prev_x0) {
         (*stable_count)++;  // Increment stable count if x0 is unchanged
     } else {
         *stable_count = 0;  // Reset stable count if x0 changes
@@ -180,13 +180,15 @@ int filter(int x0, int *prev_y0, int *stable_count, int stable_threshold) {
 }
 int personcount_raw_x0 = 0;
 int prev_personcount_y0 = 0;  // Initialize previous y0
+int prev_personcount_x0 = 0;  // Initialize previous y0
 int stable_personcount = 0;  // Count of how many times x0 has remained the same
 int liftercount_raw_x0 = 0;
 int prev_liftercount_y0 = 0;  // Initialize previous y0
+int prev_liftercount_x0 = 0;  // Initialize previous y0
 int stable_liftercount = 0;  // Count of how many times x0 has remained the same
 int prev_personcount_output = 0;
 int prev_liftercount_output = 0;
-
+int stable_threshold = 10;  // Default value
 
 /* Check if the given classification is to be filtered */
 int
@@ -379,32 +381,51 @@ clock_gettime(CLOCK_MONOTONIC_RAW, &tp1);
     int personcount_output=0; 
     int liftercount_output=0; 
 
+    // Fixed filename
+    char filename[] = "SSM/sampleJAL.png";
+    
+    
+    personcount_output = filter(personcount_raw_x0, &prev_personcount_x0,&prev_personcount_y0, &stable_personcount, stable_threshold);
+    liftercount_output = filter(liftercount_raw_x0, &prev_liftercount_x0,&prev_liftercount_y0, &stable_liftercount, stable_threshold);
+    
+    prev_personcount_x0=personcount_raw_x0;
+    prev_liftercount_x0=liftercount_raw_x0;
 
-
-    personcount_output = filter(personcount_raw_x0, &prev_personcount_y0, &stable_personcount, 10);
-    liftercount_output = personcount_output; //only for develomentp
-    printf("output=%d, raw=%d stable=%d\n",personcount_output,personcount_raw_x0,stable_personcount);
+    printf("output=%d, raw=%d stable=%d thresgold%d\n",personcount_output,personcount_raw_x0,stable_personcount,stable_threshold);
     printf("prev_personcount_output=%d, personcount_output=%d\n",prev_personcount_output,personcount_output);
     //if personcount_ouput_condition is true
     //if liftercount_ouput_condition is true
     if((prev_personcount_output!=personcount_output)||(prev_liftercount_output!=liftercount_output))
     {
 
-        // Populate 'element' with dummy data
-        memset(&element, 0, sizeof(QueueElement));
+
         element.person_counter = (unsigned char)personcount_output;
         element.lifter_counter = (unsigned char)liftercount_output;
 
-        // Set dummy object data if needed
-        for (int i = 0; i < MAX_OBJECTS; i++)
-        {
-            element.objects[i].x = 0;
-            element.objects[i].y = 0;
-            element.objects[i].w = 0;
-            element.objects[i].h = 0;
-            element.objects[i].c = 0;
-        }
         
+        // Combine luma and chroma images to form NV12 image
+        int height = frameinfo->lumaImg.rows;
+        int width = frameinfo->lumaImg.cols;
+        int stride = frameinfo->inframe->props.stride;
+
+        // Create NV12 Mat with luma and chroma data
+        Mat nv12img(height * 3 / 2, stride, CV_8UC1);
+        size_t luma_size = frameinfo->lumaImg.total() * frameinfo->lumaImg.elemSize();
+        size_t chroma_size = frameinfo->chromaImg.total() * frameinfo->chromaImg.elemSize();
+
+        // Copy luma data
+        memcpy(nv12img.data, frameinfo->lumaImg.data, luma_size);
+
+        // Copy chroma data
+        memcpy(nv12img.data + luma_size, frameinfo->chromaImg.data, chroma_size);
+
+        // Convert NV12 to BGR
+        Mat bgrImg;
+        cvtColor(nv12img, bgrImg, cv::COLOR_YUV2BGR_NV12);
+
+        // Save the image
+        imwrite(filename, bgrImg);
+
 
         // Before sending, clear the queue by receiving any existing messages
         char recv_buf[MQ_MSGSIZE];
@@ -428,10 +449,11 @@ clock_gettime(CLOCK_MONOTONIC_RAW, &tp1);
         prev_liftercount_output = liftercount_output;
 
     }
-    prev_personcount_y0=personcount_raw_x0;
-    prev_liftercount_y0=liftercount_raw_x0;
+    prev_personcount_y0=personcount_output;
+    prev_liftercount_y0=personcount_output;
     personcount_raw_x0=0;
     liftercount_raw_x0=0;
+    memset(&element, 0, sizeof(QueueElement));
 
   }
 
@@ -492,26 +514,26 @@ clock_gettime(CLOCK_MONOTONIC_RAW, &tp1);
         {
             int idx=personcount_raw_x0+liftercount_raw_x0;
 
+            element.objects[idx].x = prediction->bbox.x;
+            element.objects[idx].y = prediction->bbox.y;
+            element.objects[idx].w = prediction->bbox.width;
+            element.objects[idx].h = prediction->bbox.height;
+            element.objects[idx].c = 0;
+
             personcount_raw_x0=personcount_raw_x0+1;
-            element.objects[i].x = 0;
-            element.objects[i].y = 0;
-            element.objects[i].w = 0;
-            element.objects[i].h = 0;
-            element.objects[i].c = 0;
 
         }
         break;
         case 1:
         {  
-            int idx=personcount_raw_x0+liftercount_raw_x0;
+            int idx=personcount_raw_x0+liftercount_raw_x0;            
+            element.objects[idx].x = prediction->bbox.x;
+            element.objects[idx].y = prediction->bbox.y;
+            element.objects[idx].w = prediction->bbox.width;
+            element.objects[idx].h = prediction->bbox.height;
+            element.objects[idx].c = 0;
 
             liftercount_raw_x0=liftercount_raw_x0+1;
-            
-            element.objects[i].x = 0;
-            element.objects[i].y = 0;
-            element.objects[i].w = 0;
-            element.objects[i].h = 0;
-            element.objects[i].c = 0;
         }
         break;
 
@@ -865,6 +887,20 @@ extern "C"
     if (mq == (mqd_t) -1) {
         perror("mq_open failed");
         exit(EXIT_FAILURE);
+    }
+
+    // Added code to read from AIRenderConfig.txt
+    FILE *config_file;
+    config_file = fopen("AIRenderConfig.txt", "r");
+    if (config_file != NULL) 
+    {
+        if (fscanf(config_file, "%d", &stable_threshold) != 1) {
+        printf("Failed to read stable_threshold from AIRenderConfig.txt, using default value %d\n", stable_threshold);
+    }
+    fclose(config_file);
+    } else 
+    {
+      printf("Failed to open AIRenderConfig.txt, using default stable_threshold %d\n", stable_threshold);
     }
     
     return 0;
