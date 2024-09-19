@@ -35,7 +35,7 @@
 // TI added for JB ======================
 #include <mqueue.h>
 #include <stdbool.h>
-#define JB_VERSION "0001\n"
+#define AIRender_VERSION "0002\n"
 
 
 
@@ -51,6 +51,37 @@ using namespace std;
 #define MAX_LABEL_LEN 1024
 #define MAX_ALLOWED_CLASS 20
 #define MAX_ALLOWED_LABELS 20
+
+
+#define MQ_NAME "/my_queue"
+#define MQ_MAXMSG 1  // Maximum number of messages
+#define MAX_OBJECTS 32
+#define MQ_MSGSIZE sizeof(QueueElement)  // Size of each message
+
+
+
+typedef struct {
+    unsigned short x;
+    unsigned short y;
+    unsigned short w;
+    unsigned short h;
+    unsigned char c;
+    unsigned char reserve[3];
+} ObjectInfo;
+
+typedef struct {
+    unsigned char person_counter;
+    unsigned char lifter_counter;
+    ObjectInfo objects[MAX_OBJECTS];
+} QueueElement;
+
+
+// Declare global variables for the message queue
+struct mq_attr attr;
+mqd_t mq = (mqd_t)-1;    // Message queue descriptor
+QueueElement element;    // Queue element to send
+
+
 
 // Jason add =============================
 static int RESULT_last = 0;
@@ -122,6 +153,40 @@ double scl_fac_y = 0.0;
 int num_of_people = 0;
 clock_t warn_time_last, warn_time_cur;
 //Jason add
+
+
+// Function to filter x0 based on time stability
+int filter(int x0, int *prev_y0, int *stable_count, int stable_threshold) {
+    int y0;
+
+    // Check if x0 has remained the same
+    if (x0 == *prev_y0) {
+        (*stable_count)++;  // Increment stable count if x0 is unchanged
+    } else {
+        *stable_count = 0;  // Reset stable count if x0 changes
+    }
+
+    // Set y0 to x0 if x0 has remained unchanged for the required number of iterations
+    if (*stable_count >= stable_threshold) {
+        y0 = x0;
+    } else {
+        y0 = *prev_y0;
+    }
+
+    // Update the previous y0 and x0 for the next call
+    *prev_y0 = y0;
+
+    return y0;
+}
+int personcount_raw_x0 = 0;
+int prev_personcount_y0 = 0;  // Initialize previous y0
+int stable_personcount = 0;  // Count of how many times x0 has remained the same
+int liftercount_raw_x0 = 0;
+int prev_liftercount_y0 = 0;  // Initialize previous y0
+int stable_liftercount = 0;  // Count of how many times x0 has remained the same
+int prev_personcount_output = 0;
+int prev_liftercount_output = 0;
+
 
 /* Check if the given classification is to be filtered */
 int
@@ -298,11 +363,75 @@ clock_gettime(CLOCK_MONOTONIC_RAW, &tp1);
   GList *classes;
   GstInferenceClassification *classification;
   GstInferencePrediction *prediction = (GstInferencePrediction *) node->data;
+//raw number  a,b
+//
+//int personcount_raw_x0 = 0;
+//int prev_personcount_y0 = 0;  // Initialize previous y0
+//int stable_personcount = 0;  // Count of how many times x0 has remained the same
+//output
+
 
   if(NULL==prediction->classifications) //NULL==prediction->classifications
   {
      printf("end  end  end\n");
+    
 
+    int personcount_output=0; 
+    int liftercount_output=0; 
+
+
+
+    personcount_output = filter(personcount_raw_x0, &prev_personcount_y0, &stable_personcount, 10);
+    liftercount_output = personcount_output; //only for develomentp
+    printf("output=%d, raw=%d stable=%d\n",personcount_output,personcount_raw_x0,stable_personcount);
+    printf("prev_personcount_output=%d, personcount_output=%d\n",prev_personcount_output,personcount_output);
+    //if personcount_ouput_condition is true
+    //if liftercount_ouput_condition is true
+    if((prev_personcount_output!=personcount_output)||(prev_liftercount_output!=liftercount_output))
+    {
+
+        // Populate 'element' with dummy data
+        memset(&element, 0, sizeof(QueueElement));
+        element.person_counter = (unsigned char)personcount_output;
+        element.lifter_counter = (unsigned char)liftercount_output;
+
+        // Set dummy object data if needed
+        for (int i = 0; i < MAX_OBJECTS; i++)
+        {
+            element.objects[i].x = 0;
+            element.objects[i].y = 0;
+            element.objects[i].w = 0;
+            element.objects[i].h = 0;
+            element.objects[i].c = 0;
+        }
+        
+
+        // Before sending, clear the queue by receiving any existing messages
+        char recv_buf[MQ_MSGSIZE];
+        ssize_t bytes_received;
+        while ((bytes_received = mq_receive(mq, recv_buf, MQ_MSGSIZE, NULL)) >= 0) {
+            // Discard received message
+        }
+        if (errno != EAGAIN && errno != ENOMSG) {
+            perror("mq_receive failed");
+            // Handle error as needed
+        }
+
+        // Send 'element' via message queue
+        if (mq_send(mq, (const char *)&element, sizeof(QueueElement), 0) == -1)
+        {
+                perror("mq_send failed");
+        }
+
+        // Update previous counts
+        prev_personcount_output = personcount_output;
+        prev_liftercount_output = liftercount_output;
+
+    }
+    prev_personcount_y0=personcount_raw_x0;
+    prev_liftercount_y0=liftercount_raw_x0;
+    personcount_raw_x0=0;
+    liftercount_raw_x0=0;
 
   }
 
@@ -313,7 +442,7 @@ clock_gettime(CLOCK_MONOTONIC_RAW, &tp1);
   for (classes = prediction->classifications;
       classes; classes = g_list_next (classes)) {
     classification = (GstInferenceClassification *) classes->data;
-printf("111111xxxxxxxxxxxxxxxxxxxxxxxx\n");
+
 
     int idx = ivas_classification_is_allowed ((char *)
         classification->class_label, kpriv);
@@ -357,6 +486,36 @@ printf("111111xxxxxxxxxxxxxxxxxxxxxxxx\n");
     }
 
 
+    switch(classification->class_id)
+    {
+        case 0:
+        {
+            int idx=personcount_raw_x0+liftercount_raw_x0;
+
+            personcount_raw_x0=personcount_raw_x0+1;
+            element.objects[i].x = 0;
+            element.objects[i].y = 0;
+            element.objects[i].w = 0;
+            element.objects[i].h = 0;
+            element.objects[i].c = 0;
+
+        }
+        break;
+        case 1:
+        {  
+            int idx=personcount_raw_x0+liftercount_raw_x0;
+
+            liftercount_raw_x0=liftercount_raw_x0+1;
+            
+            element.objects[i].x = 0;
+            element.objects[i].y = 0;
+            element.objects[i].w = 0;
+            element.objects[i].h = 0;
+            element.objects[i].c = 0;
+        }
+        break;
+
+    }
 
     printf(
         "RESULT: (prediction node %ld) %s(%d) %d %d %d %d (%f)\n",
@@ -694,8 +853,19 @@ extern "C"
     handle->kernel_priv = (void *) kpriv;
  
 
-    printf(JB_VERSION);
+    printf(AIRender_VERSION);
+    
+    // Initialize message queue attributes
+    attr.mq_flags = 0; // Blocking mode
+    attr.mq_maxmsg = MQ_MAXMSG;
+    attr.mq_msgsize = MQ_MSGSIZE;
+    attr.mq_curmsgs = 0;
 
+    mq = mq_open(MQ_NAME, O_WRONLY | O_CREAT|O_NONBLOCK, 0644, &attr);
+    if (mq == (mqd_t) -1) {
+        perror("mq_open failed");
+        exit(EXIT_FAILURE);
+    }
     
     return 0;
   }
